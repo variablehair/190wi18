@@ -104,9 +104,6 @@ for token in tokens:
     results_dat[token] = token_dat_results
     results_acc[token] = token_acc_results
 
-#    if not results_dat:
-#        all_results_pruned.write(token + '\n')
-
 with open('data/dative_pruned.json', mode='w') as f:
     json.dump(results_dat, f)
 

@@ -7,8 +7,6 @@ datapath = 'data/temp/'
 datadir = os.fsencode(datapath)
 conn = sqlite3.connect('data/data100.db')
 
-result = dict()
-
 def process_raw_json(filename, tokenname, dbconn):
     c = dbconn.cursor()
     try:
@@ -43,8 +41,5 @@ for file in os.listdir(datadir):
     filename = os.fsdecode(file)
     tokenname = filename[0:-8]
     process_raw_json(datapath+filename, tokenname, conn)
-    
-with open('data/data100.json', encoding='utf-8', mode='a') as outfile:
-    json.dump(result, outfile)
 
 conn.close()

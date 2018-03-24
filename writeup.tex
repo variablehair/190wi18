@@ -405,7 +405,395 @@
 				continue
 	\end{minted}
 	
-	Each line is split at whitespace, and the first word is examined. If it is entirely in uppercase, and longer than 
+	Each line is split at whitespace, and the first word is examined. If it is entirely in uppercase, and longer than 2 characters after punctuation or numerals have been removed, then it is added to the list of entries. Finer pruning was certainly possible but perhaps not needed for this task.
 	
+	\subsection{\texttt{compile\_data100.py}}
+	
+	This module takes the JSON data from \texttt{data\_fetch.py} and puts it into a SQLite database. Because the JSON data already existed, it was written to work with that specifically; a much better approach for any future implementation would be to have the data fetch module work directly with the database, eliminating this middle man.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	def process_raw_json(filename, tokenname, dbconn):
+		c = dbconn.cursor()
+		try:
+			c.execute('''CREATE TABLE {} (token TEXT, left TEXT, right TEXT)'''.format(tokenname))
+		except sqlite3.OperationalError:
+			print(tokenname)
+			return
+		with open(filename, encoding='utf-8') as data:
+			raw_string = data.readline()
+			split_string = '{\"rightsize'
+			string_list = [split_string + s[:-2] for s in raw_string.split(split_string) if len(s) >= 2]
+			for string_dict in string_list:
+				try:
+					result_dict = ast.literal_eval(string_dict)
+				except SyntaxError:
+					result_dict = ast.literal_eval(string_dict + '}')
+				left_str = [ldict['str'].split(' ') for ldict in result_dict['Left']]
+				left_str = [string for sublist in left_str for string in sublist]
+				left_str = ' '.join(left_str)
+				right_str = [rdict['str'].split(' ') for rdict in result_dict['Right']]
+				right_str = [string for sublist in right_str for string in sublist]
+				right_str = ' '.join(right_str)
+				query = '''INSERT INTO {0} VALUES ('{1}','{2}','{3}')'''.format(tokenname, result_dict['Kwic'][0]['str'], left_str.replace("\'", "\'\'"), right_str.replace("\'", "\'\'"))
+				try:
+					c.execute(query)
+				except sqlite3.OperationalError:
+					print(query)
+		conn.commit()
+		print(tokenname)
+	\end{minted}
+	
+	This function makes up the bulk of the module. It takes a file, a token, and a database connection. It attempts to create a table with the token (e.g. `ar'), and then reads the entire file as a string (because it cannot be loaded as an object due to size). It then splits this raw string at \texttt{'\textbackslash\{\"rightsize'}, which precedes each unique entry in the data. It then evaluates each individual entry as a literal Python object rather than a string before concatenating them (as they are in one or two layers of lists) into a string, which is finally inserted into the database.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	import os
+	import json
+	import sqlite3
+	import ast
+	
+	datapath = 'data/temp/'
+	datadir = os.fsencode(datapath)
+	conn = sqlite3.connect('data/data100.db')
+
+	def process_raw_json(filename, tokenname, dbconn):
+		...
+		
+	for file in os.listdir(datadir):
+		filename = os.fsdecode(file)
+		tokenname = filename[0:-8]
+		process_raw_json(datapath+filename, tokenname, conn)
+	
+	conn.close()
+	\end{minted}
+	
+	The remainder of the file simply iterates through the folder containing all the JSON objects and calls the previously defined function on each of them.
+	
+	\subsection{\texttt{counter\_task2\_dict.py}}
+	
+	This module contains task 2, which attempted to extract dative and accusative marked nouns from the sentence.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	import json
+	import sqlite3
+	
+	EXCLUDE_LEFT = ['məli', 'malı', 'mək', 'maq']
+	DAT_CASE = ['a', 'ə']
+	ACC_CASE = ['i', 'u', 'ü', 'ı']
+	EXCLUDE_PREV_WORD = ['in', 'un', 'ün', 'ın']
+	END_OF_SENTENCE = ['.', '?', '!', '\n', '<', '>']
+	
+	conn = sqlite3.connect('data/data100.db')
+	c = conn.cursor()
+	
+	with open('dict_entries_noparens.txt', encoding='utf-8') as f:
+		DICT_ENTRIES = set([string[:-1] for string in f.readlines()])
+	
+	tokens = conn.execute('''SELECT name FROM sqlite_master WHERE type="table"''')
+	tokens = [tup[0] for tup in tokens]
+	
+	pruned_dict_entries = open('pruned_dict_entries.txt', encoding='utf-8', mode='w')
+	all_results_pruned = open('all_results_pruned.txt', encoding='utf-8', mode='w')
+	no_results_found = open('no_results_found.txt', encoding='utf-8', mode='w')
+	\end{minted}
+	
+	Some definitions, such as case markers, are given. Pruning-related constants, such as the a set of dictionary entries, are created, and a list of all tables to be iterated through are also created. Finally, some log files to track pruning are created.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	def EOS_prune(word_list, kept_words, position):
+		if position == len(word_list) - 1:
+			return word_list
+		elif len(word_list[position]) > 0 and word_list[position][-1] in END_OF_SENTENCE:
+			return kept_words
+		else:
+			kept_words.append(word_list[position])
+			return EOS_prune(word_list, kept_words, position+1)
+	\end{minted}
+	
+	This function takes a list of words and returns the same list of words with all words after the sentence boundary removed by recursively iterating until a end of sentence marker, such as a period or an HTML tag (all tags found in a quick sample were paragraph break tags, so we assumed they marked a sentence boundary).
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	def pull_cased_nouns(word_list, case_markers, position, pulled_words):
+		if position >= len(word_list) - 1:
+			return pulled_words
+		curr_word = word_list[position]
+		if len(curr_word) >= 3 and curr_word[-1] in case_markers:
+			if curr_word.upper() in DICT_ENTRIES:
+				pruned_dict_entries.write(word + '\t\t\t\t\t' + curr_word + '\n')
+				return pull_cased_nouns(word_list, case_markers, position+1, pulled_words)
+			
+			if curr_word[-2] == 'n':
+				if position >= 1 and word_list[position-1][-2:] in EXCLUDE_PREV_WORD:
+				return pull_cased_nouns(word_list, case_markers, position+1, pulled_words)
+			elif position == 0:
+				return pull_cased_nouns(word_list, case_markers, position+1, pulled_words)
+			
+			if curr_word[-2:] in ['da', 'də']:
+				return pull_cased_nouns(word_list, case_markers, position+1, pulled_words)
+			
+			pulled_words.append(curr_word)
+		return pull_cased_nouns(word_list, case_markers, position+1, pulled_words)
+	\end{minted}
+	
+	This function takes a list of word and extracts nouns marked by the provided case markings according to our pruning rules, and also keeps track of the previous word for this purpose. Pruning rules include being a dictionary entry and the marking of the previous word.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	results_dat = dict()
+	results_acc = dict()
+	
+	for token in tokens:
+	token_dat_results = dict()
+	token_acc_results = dict()
+	
+	c.execute('''SELECT token, left, right FROM {0}'''.format(token))
+	
+	while True:
+		r = c.fetchone()
+		if r is None:
+			break
+		word, left, right = r
+		
+		try:
+			if word.endswith(token):
+				#exclude word-final appearance
+				continue
+			
+			left = left.split(' ')
+			right = right.split(' ')
+			
+			for left_word in left:
+				if any(x in left_word for x in EXCLUDE_LEFT):
+					#exclude specific left-occuring words
+					raise ValueError
+			
+			left.reverse()
+			#remove words outside of sentence
+			left = EOS_prune(left, [], 0)
+			left.reverse()
+			right = EOS_prune(right, [], 0)
+			
+		    pulled_dat_list = pull_cased_nouns(left, DAT_CASE, 0, []) + pull_cased_nouns(right, DAT_CASE, 0, [])
+			pulled_acc_list = pull_cased_nouns(left, ACC_CASE, 0, []) + pull_cased_nouns(right, ACC_CASE, 0, [])
+			
+			curr_dat_results = token_dat_results.get(word, {})
+			curr_acc_results = token_acc_results.get(word, {})
+			
+			for pulled_dat in pulled_dat_list:
+				curr_dat_results[pulled_dat] = curr_dat_results.get(pulled_dat, 0) + 1
+			token_dat_results[word] = curr_dat_results
+			
+			for pulled_acc in pulled_acc_list:
+				curr_acc_results[pulled_acc] = curr_acc_results.get(pulled_acc, 0) + 1
+			token_acc_results[word] = curr_acc_results
+			
+		except ValueError:
+			continue
+			
+	results_dat[token] = token_dat_results
+	results_acc[token] = token_acc_results
+	
+	with open('data/dative_pruned.json', mode='w') as f:
+		json.dump(results_dat, f)
+	
+	with open('data/accusative_pruned.json', mode='w') as f:
+		json.dump(results_acc, f)
+	
+	pruned_dict_entries.close()
+	all_results_pruned.close()
+	no_results_found.close()
+	\end{minted}
+	
+	This remainder of the module iterates through every table in the database, and for each one, tests one row at a time, extracting appropriately marked nouns. Some basic pruning, such as word-final appearance of the verb marking, is done here. Note that the left-occurring word pruning is incorrect and should be changed if we return to this task in the future. The left and right strings are then passed through the two previously defined functions -- note that the left string is first reversed, as we want to remove the words outside rather than inside of the sentence. The dative and accusative results are separately recorded before being saved in JSON form.
+	
+	\subsection{\texttt{xlsx\_writer\_task2.py}}
+	
+	This module takes the JSON files generated by the previous module and writes them to human-readable xlsx format. The reason for this two-step process is that it is much more difficult to work directly with xlsx files than with JSON data, and so it is useful to keep the intermediate JSON representation around.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	import xlsxwriter
+	import json
+	from operator import itemgetter
+	
+	workbook_dat = xlsxwriter.Workbook('dict_pruned_dative.xlsx')
+	with open('data/dative_pruned.json') as f:
+		j_dat = json.load(f)
+	
+	for token in j_dat:
+		worksheet = workbook_dat.add_worksheet(token)
+		row = 0
+		word_dict = j_dat[token]
+		for word in word_dict:
+			tup_results = sorted(word_dict[word].items(), key=itemgetter(1), reverse=True)
+			for tup in tup_results:
+			worksheet.write(row, 0, word)
+			worksheet.write(row, 1, tup[0])
+			worksheet.write(row, 2, tup[1])
+			row += 1
+	workbook_dat.close()
+	\end{minted}
+	
+	This module contains the same process for both dative and accusative case (and really should use a function instead of copy-pasting code), so only one of the two is provided due to space. The JSON file is loaded and a sheet is created for each original search query; then, the module iterates through the verbs, sorts their results, then writes them in descending order.
+	
+	\subsection{\texttt{xlsx\_pruned\_dict\_writer.py}}
+	
+	This module should really be called `dict\_pruned\_writer', but oh well. This module simply takes the text file of pruned entries, concatenates them by number of occurences, and writes them into an xlsx file for readability.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	import xlsxwriter
+	
+	with open('pruned_dict_entries.txt', encoding='utf-8') as f:
+		lines = f.readlines()
+		tuple_list = []
+		for line in lines:
+		sl = line.split('\t')
+		tuple_list.append((sl[0], sl[-1]))
+	
+	results = {}
+	for tup in tuple_list:
+		tup_results = results.get(tup[0], {})
+		tup_results[tup[1]] = tup_results.get(tup[1], 0) + 1
+		results[tup[0]] = tup_results
+	
+	workbook = xlsxwriter.Workbook('pruned_dict_entries.xlsx')
+	worksheet = workbook.add_worksheet('Pruned Entries')
+	
+	row = 0
+	for r in results:
+		curr_dict = results[r]
+		for key in curr_dict:
+			worksheet.write(row, 0, r)
+			worksheet.write(row, 1, key)
+			worksheet.write(row, 2, curr_dict[key])
+			row += 1
+	
+	workbook.close()
+	\end{minted}
+	
+	The text file of pruned entries is read in. Because of the formatting of that file, we split each line at tabs, resulting in a tuple, from which we take the first and last members. Then, we simply group results and count occurrences before writing the results to an xlsx file.
+	
+	\subsection{\texttt{task3\_hapax.py}}
+	
+	This module counts the number of \emph{hapax legomena} occurring within our data set for each causative.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	import sqlite3
+	import xlsxwriter
+	from operator import itemgetter
+	
+	with open('task1clean.txt', encoding='utf-8') as f:
+		token_list = f.readlines()
+	
+	conn = sqlite3.connect('data/data100.db')
+	
+	workbook = xlsxwriter.Workbook('task3_hapax.xlsx')
+	\end{minted}
+	
+	As with previously covered modules, some basic definitions and imports, such as a database connection, are created.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	for token in token_list:
+		c = conn.cursor()
+		query = '''SELECT token FROM {0}'''.format(token)
+		c.execute(query)
+		
+		total = 0
+		hapax = 0
+		found_words = dict()
+		
+		while True:
+			row = c.fetchone()
+			if row == None:
+				break
+			found_words[row[0]] = found_words.get(row[0], 0) + 1
+		
+		for word in found_words:
+			num = found_words[word]
+			total += num
+			if num == 1:
+				hapax += 1
+		
+		results_list = sorted(found_words.items(), key=itemgetter(1), reverse=True)
+	\end{minted}
+	
+	The module then iterates through all tables in the database, and fetches the verb (`\texttt{word}') from each row, keeping count of the number of times each verb occurs. Afterward, it iterates through these results and calculates both the total number of verbs as well as the number of hapaxes.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	worksheet = workbook.add_worksheet(token)
+	
+	row = 0
+	worksheet.write(row, 0, 'Total hapax')
+	worksheet.write(row, 1, 'Total tokens')
+	
+	row += 1
+	worksheet.write(row, 0, hapax)
+	worksheet.write(row, 1, total)
+	worksheet.write(row, 2, str(hapax/total))
+	
+	row += 2
+	for result in results_list:
+		worksheet.write(row, 0, result[0])
+		worksheet.write(row, 1, result[1])
+		row += 1
+	
+	\end{minted}
+	
+	It then writes this into an xlsx file; no intermediate representation is used as currently the intermediate data is not expected to be needed in the immediate future.
+	
+	\subsection{\texttt{syntactic\_category\_fetch.py}}
+	
+	This module goes back into the dictionary to try to extract the syntactic category of each entry.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	import string
+	import re
+	import xlsxwriter
+	import json
+	
+	INVALID_EXCEL_CHAR = r'[\[\]\:\*\?\/\\]'
+	
+	with open('dict.txt', encoding='utf-8') as f:
+	
+		res = dict()
+		curr = ''
+		
+		for l in f:
+			line = l.split(' ')
+			
+			try:
+				if line[0].isupper():
+					curr = re.sub(r'\([^()]*\)', '', line[0])
+					line = line[1:]
+				
+				for word in line:
+					if word.islower() and '.' in word and not any([digit in word for digit in string.digits]):
+						word = re.sub(INVALID_EXCEL_CHAR, '', word)
+						rlist = res.get(word, [])
+						rlist.append(curr)
+						res[word] = rlist
+				else:
+					raise IndexError
+		
+		except IndexError:
+			continue
+	\end{minted}
+	
+	This module takes much the same approach as \texttt{simple\_get\_dict\_entry.py}. It looks for strings resembling abbreviations for parts of speech, which in the dictionary seemed to take the form of lowercase letters with at least one period. For each of these potential syntactic category markers, all entries found with it are kept track of. This method produces a lot of chaff, but has the advantage of being simple and fairly likely to be complete.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	with open('../data/syncat.json', encoding='utf-8', mode='w') as f:
+		json.dump(res, f)
+	
+	workbook = xlsxwriter.Workbook('syntactic_category.xlsx')
+	for key in res:
+		row = 0
+		if len(res[key]) < 20:
+			continue
+		worksheet = workbook.add_worksheet(key)
+		for entry in res[key]:
+			worksheet.write(row, 0, entry)
+			row += 1
+	workbook.close()
+	\end{minted}
+	
+	The data is then stored in a JSON file as well as written to an xlsx file.
 	
 \end{document}               % End of document.
