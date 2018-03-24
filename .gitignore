@@ -1,6 +1,15 @@
-login.py
 *.json
 *.xlsx
+*.db
+azer_dictionary_cleanup/*.txt
+
+# Specific files
+random result sample.txt
+login.py
+pruned_dict_entries.txt
+no_results_found.txt
+api_log.txt
+all_results_pruned.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

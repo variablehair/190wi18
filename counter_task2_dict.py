@@ -1,17 +1,20 @@
 import json
+import sqlite3
 
 EXCLUDE_LEFT = ['məli', 'malı', 'mək', 'maq']
 DAT_CASE = ['a', 'ə']
 ACC_CASE = ['i', 'u', 'ü', 'ı']
 EXCLUDE_PREV_WORD = ['in', 'un', 'ün', 'ın']
-END_OF_SENTENCE = ['.', '?', '!', '\n']
+END_OF_SENTENCE = ['.', '?', '!', '\n', '<', '>']
 
-with open('dict_entries.txt', encoding='utf-8') as f:
+conn = sqlite3.connect('data/data100.db')
+c = conn.cursor()
+
+with open('dict_entries_noparens.txt', encoding='utf-8') as f:
     DICT_ENTRIES = set([string[:-1] for string in f.readlines()])
 
-with open('data/task1.json') as f:
-    json_data = json.load(f)
-    tokens = list(json_data.keys())
+tokens = conn.execute('''SELECT name FROM sqlite_master WHERE type="table"''')
+tokens = [tup[0] for tup in tokens]
 
 pruned_dict_entries = open('pruned_dict_entries.txt', encoding='utf-8', mode='w')
 all_results_pruned = open('all_results_pruned.txt', encoding='utf-8', mode='w')
@@ -20,7 +23,7 @@ no_results_found = open('no_results_found.txt', encoding='utf-8', mode='w')
 def EOS_prune(word_list, kept_words, position):
     if position == len(word_list) - 1:
         return word_list
-    elif word_list[position] in END_OF_SENTENCE:
+    elif len(word_list[position]) > 0 and word_list[position][-1] in END_OF_SENTENCE:
         return kept_words
     else:
         kept_words.append(word_list[position])
@@ -30,15 +33,20 @@ def pull_cased_nouns(word_list, case_markers, position, pulled_words):
     if position >= len(word_list) - 1:
         return pulled_words
     curr_word = word_list[position]
-    if len(curr_word) >= 2 and curr_word[-1] in case_markers:
+    if len(curr_word) >= 3 and curr_word[-1] in case_markers:
         if curr_word.upper() in DICT_ENTRIES:
             pruned_dict_entries.write(word + '\t\t\t\t\t' + curr_word + '\n')
             return pull_cased_nouns(word_list, case_markers, position+1, pulled_words)
+
         if curr_word[-2] == 'n':
             if position >= 1 and word_list[position-1][-2:] in EXCLUDE_PREV_WORD:
                 return pull_cased_nouns(word_list, case_markers, position+1, pulled_words)
             elif position == 0:
                 return pull_cased_nouns(word_list, case_markers, position+1, pulled_words)
+
+        if curr_word[-2:] in ['da', 'də']:
+            return pull_cased_nouns(word_list, case_markers, position+1, pulled_words)
+
         pulled_words.append(curr_word)
     return pull_cased_nouns(word_list, case_markers, position+1, pulled_words)
 
@@ -46,31 +54,31 @@ results_dat = dict()
 results_acc = dict()
 
 for token in tokens:
-    try:
-        token_lines = json_data[token]['Lines']
-    except KeyError:
-        no_results_found.write(token + '\n')
-        continue
-    
     token_dat_results = dict()
     token_acc_results = dict()
 
-    for line in token_lines:
+    c.execute('''SELECT token, left, right FROM {0}'''.format(token))
+
+    while True:
+        r = c.fetchone()
+        if r is None:
+            break
+        word, left, right = r
+                
         try:
-            word = line['Kwic'][0]['str']
             if word.endswith(token):
                 #exclude word-final appearance
                 continue
-            left = [ldict['str'].split(' ') for ldict in line['Left']]
-            left = [string for sublist in left for string in sublist]
+
+            left = left.split(' ')
+            right = right.split(' ')
+
             for left_word in left:
                 if any(x in left_word for x in EXCLUDE_LEFT):
                     #exclude specific left-occuring words
                     raise ValueError
-            left.reverse()            
-            right = [rdict['str'].split(' ') for rdict in line['Right']]
-            right = [string for sublist in right for string in sublist]
 
+            left.reverse()
             #remove words outside of sentence
             left = EOS_prune(left, [], 0)
             left.reverse()
