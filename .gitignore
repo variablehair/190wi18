@@ -3,7 +3,6 @@
 *.db
 *.aux
 *.gz
-*.pdf
 azer_dictionary_cleanup/*.txt
 _minted-writeup/*
 
