@@ -16,52 +16,17 @@
 	
 	\maketitle                   % Produces the title.
 	
-	In Winter Quarter of 2018, I was enrolled in LIGN 199, a special independent undergraduate research course. I assisted Matthew Zaslansky, a graduate student at UCSD, with research in Azerbaijani, chiefly data compilation from an online corpus, SketchEngine, and processing of that data, in Python. The course is graded as P/NP and is worth four credits.
+	In Winter Quarter of 2018, I was enrolled in LIGN 199, a special independent undergraduate research course. I assisted Matthew Zaslansky, a graduate student at UCSD, with research in Azerbaijani, chiefly data compilation from an online corpus, SketchEngine, and processing of that data, in Python. All code from the project can be found in my GitHub repository, https://github.com/variablehair/199wi18. The course is graded as P/NP and is worth four credits.
 	
 	\section{Introduction}
 	
 	A relatively small number of external packages and modules were used in this project; they will be briefly introduced here.
 	
-	\subsection{\texttt{requests} and \texttt{urllib.parse}}
-	
-	The \texttt{requests} package and \texttt{urllib.parse} module are used only in the data fetching process to interface with SketchEngine's API.
-	
-	\begin{minted}[bgcolor=bg, breaklines=true]{python}
-	s = requests.Session()
-	s.auth = (tom_username, tom_password)
-	s.get(login_url)
-	url = base_url + 'view'
-	...
-	r = s.post(login_url,data=logindata)
-	encoded_attrs=urllib.parse.urlencode(attrs)
-	r = s.get(url, params = attrs)
-	\end{minted}
-	
-	\texttt{requests} is used here to create an interface with SketchEngine via a \texttt{Session} object, which sends and receives data with \texttt{post} and \texttt{get}. \texttt{urllib.parse} is used to encode the data sent to the server into the appropriate format.
-	
-	\subsection{\texttt{time}}
-	
-	The \texttt{time} package is used only in the data fetching process to delay execution of the code in order to comply with SketchEngine's rate limits.
-	
-	\begin{minted}[bgcolor=bg, breaklines=true]{python}
-	while pagenum < MAX_SAMPLES:
-		pagenum += 1
-		attrs['fromp'] = pagenum
-		r = s.get(url, params=attrs)
-		curr_res_dict = r.json()
-		...	
-		time.sleep(10)
-		if pagenum % 25 == 0:
-			time.sleep(60)
-	\end{minted}
-	
-	Here, \texttt{time.sleep} is used to pause execution of the loop on every iteration for 10 seconds with an additional pause on every 25th iteration for 60 seconds. This was found to be within the limits allowed by SketchEngine despite being less than their prescribed pause (44 seconds per query), which is prohibitively long for our task.
-	
 	\subsection{\texttt{json}}
 	
 	The \texttt{json} package is used widely throughout the project as one of the two primary data management formats. Primarily, it is used to save and load data to disk in a machine-friendly format.
 	
-	\begin{minted}[bgcolor=bg, breaklines=true]{python}
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
 	r = s.get(url, params = attrs)
 	curr_res_dict = r.json()
 	...
@@ -69,9 +34,9 @@
 		json.dump(curr_results, f)
 	\end{minted}
 	
-	In the above snippet from \texttt{data\_fetch.py}, data is retrieved from SketchEngine in \texttt{json} format, and after processing, is then stored in a \texttt{.json} file.
+	In the above snippet from \texttt{data\_fetch.py}, data is retrieved from SketchEngine in JSON format, and after processing, is then stored in a \texttt{.json} file.
 	
-	\begin{minted}[bgcolor=bg, breaklines=true]{python}
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
 	with open('data/dative_pruned.json') as f:
 		j_dat = json.load(f)
 	
@@ -79,13 +44,13 @@
 		...
 	\end{minted}
 	
-	In the above snippet from \texttt{xlsx\_writer\_task2.py}, stored \texttt{json} data is loaded into the program. This approach, while simple, ran into a problem of magnitude; specifically, \texttt{json.load} was found to have significant overhead on memory (RAM) which seemed to scale exponentially with file size, rendering this approach untenable when the data set became large.
+	In the above snippet from \texttt{xlsx\_writer\_task2.py}, stored JSON data is loaded into the program. This approach, while simple, ran into a problem of magnitude; specifically, \texttt{json.load} was found to have significant overhead on memory (RAM) which seemed to scale exponentially with file size, rendering this approach untenable when the data set became large, as ours did.
 	
 	\subsection{\texttt{sqlite3}}
 	
-	As a solution to this problem, the dataset was transposed to a SQLite library using the \texttt{sqlite3} package. \texttt{sqlite3} was chosen because of its minimal setup and upkeep, making it ideal for our task. Its primary drawback is its relatively slower speed, but as our total and average throughput of database access was extremely low, this was not a concern.
+	As a solution to this problem, the dataset was transposed to a SQLite database using the \texttt{sqlite3} package. \texttt{sqlite3} was chosen because of its minimal setup and upkeep, making it ideal for our task. Its primary drawback is its relatively slower speed, but as our total and average throughput of database access was extremely low, this was not a concern.
 	
-	\begin{minted}[bgcolor=bg, breaklines=true]{python}
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
 	conn = sqlite3.connect('data/data100.db')
 	...
 	def process_raw_json(filename, tokenname, dbconn):
@@ -102,7 +67,7 @@
 	
 	In the above snippet from \texttt{compile\_data100.py}, tables are created in our database and populated with data using database connection and cursor objects.
 	
-	\begin{minted}[bgcolor=bg, breaklines=true]{python}
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
 	c.execute('''SELECT token, left, right FROM {0}'''.format(token))
 	
 	while True:
@@ -113,72 +78,334 @@
 		...
 	\end{minted}
 	
-	In the above snippet from \texttt{counter\_task2\_dict.py}, a query which fetches every row from a particular table is executed. By using \texttt{c.fetchone()}, this allows us to only load a single row of data at a time into memory, bypassing the \texttt{json} problem (wherein the entire dataset had to be loaded into memory).
+	In the above snippet from \texttt{counter\_task2\_dict.py}, a query which fetches every row from a particular table is executed. By using \texttt{c.fetchone()}, we only load a single row of data at a time into memory, bypassing the JSON problem (wherein the entire dataset had to be loaded into memory).
 	
-	\section{Displayed Text}
+	\subsection{\texttt{xlsxwriter}}
 	
-	Text is displayed by indenting it from the left
-	margin.  Quotations are commonly displayed.  There
-	are short quotations
-	\begin{quote}
-		This is a short quotation.  It consists of a 
-		single paragraph of text.  See how it is formatted.
-	\end{quote}
-	and longer ones.
-	\begin{quotation}
-		This is a longer quotation.  It consists of two
-		paragraphs of text, neither of which are
-		particularly interesting.
+	The \texttt{xlsxwriter} package is used several times throughout the project to generate human-readable \texttt{.xlsx} files once data had been processed. It was chosen from several options because it was the most lightweight due to lacking the functionality to open existing \texttt{.xlsx} files. However, this functionality was not required in this project.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	workbook_dat = xlsxwriter.Workbook('dict_pruned_dative.xlsx')
+	...
+	for token in j_dat:
+		worksheet = workbook_dat.add_worksheet(token)
+		row = 0
+		...
+		for tup in tup_results:
+			worksheet.write(row, 0, word)
+			worksheet.write(row, 1, tup[0])
+			worksheet.write(row, 2, tup[1])
+		row += 1
+	workbook_dat.close()
+	\end{minted}
+	
+	In the above snippet from \texttt{xlsx\_writer\_task2.py}, \texttt{xlsxwriter} is used to create a file (\texttt{Workbook}), sheets (\texttt{worksheet}s), and then write particular results iteratively to each row.
+	
+	\subsection{\texttt{string}}
+	
+	The \texttt{string} package is used to access various built-in constants, such as a list of all the punctuation.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	import string
+	...
+		word = word.strip(string.punctuation + string.digits + '´')
+		...
+	\end{minted}
+	
+	In the above snippet from \texttt{simple\_get\_dict\_entry.py}, \texttt{string.punctuation} and \texttt{string.digits} are used as arguments to \texttt{strip()} in order to remove trailing punctuation marks and numerals from dictionary entries as part of the process to convert them to clean, machine-readable format.
+	
+	\subsection{\texttt{re}}
+	
+	The regular expression package \texttt{re} is used to perform more advanced trimming operations on the dictionary entries.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	try:
+		if line[0].isupper():
+		curr = re.sub(r'\([^()]*\)', '', line[0])
+		...
+	\end{minted}
+	
+	In the above snippet from \texttt{syntactic\_category\_fetch.py}, a regular expression is used to remove all strings between parentheses within words, as such strings were commonly found in the dictionary.
+	
+	\subsection{\texttt{requests} and \texttt{urllib.parse}}
+	
+	The \texttt{requests} package and \texttt{urllib.parse} module are used only in the data fetching process to interface with SketchEngine's API.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	s = requests.Session()
+	s.auth = (tom_username, tom_password)
+	s.get(login_url)
+	url = base_url + 'view'
+	...
+	r = s.post(login_url,data=logindata)
+	encoded_attrs=urllib.parse.urlencode(attrs)
+	r = s.get(url, params = attrs)
+	\end{minted}
+	
+	\texttt{requests} is used in the above snippet from \texttt{data\_fetch.py} to create an interface with SketchEngine via a \texttt{Session} object, which sends and receives data with \texttt{post} and \texttt{get}. \texttt{urllib.parse} is used to encode the data sent to the server into the appropriate format.
+	
+	\subsection{\texttt{time}}
+	
+	The \texttt{time} package is used only in the data fetching process to delay execution of the code in order to comply with SketchEngine's rate limits.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	while pagenum < MAX_SAMPLES:
+	pagenum += 1
+	attrs['fromp'] = pagenum
+	r = s.get(url, params=attrs)
+	curr_res_dict = r.json()
+	...	
+	time.sleep(10)
+	if pagenum % 25 == 0:
+	time.sleep(60)
+	\end{minted}
+	
+	In the above snippet from \texttt{data\_fetch.py}, \texttt{time.sleep} is used to pause execution of the loop on every iteration for 10 seconds with an additional pause on every 25th iteration for 60 seconds. This was found to be within the limits allowed by SketchEngine despite being less than their prescribed pause (44 seconds per query), which is prohibitively long for our task.
+	
+	\subsection{\texttt{os} and \texttt{ast}}
+	
+	\texttt{os} and \texttt{ast} used only in \texttt{compile\_data100.py} and are used to work with the filesystem and raw data respectively
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	datapath = 'data/temp/'
+	datadir = os.fsencode(datapath)
+	...
+	for file in os.listdir(datadir):
+		filename = os.fsdecode(file)
+		tokenname = filename[0:-8]
+		process_raw_json(datapath+filename, tokenname, conn)
+	\end{minted}
+	
+	In the above snippet from \texttt{compile\_data100.py}, \texttt{os.fsencode} and \texttt{os.fsdecode} are used to allow Python to iterate through a folder containing raw data in JSON format.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	split_string = '{\"rightsize'
+	string_list = [split_string + s[:-2] for s in raw_string.split(split_string) if len(s) >= 2]
+	for string_dict in string_list:
+		try:
+			result_dict = ast.literal_eval(string_dict)
+		except SyntaxError:
+			result_dict = ast.literal_eval(string_dict + '}')
+	\end{minted}
 		
-		This is the second paragraph of the quotation.  It
-		is just as dull as the first paragraph.
-	\end{quotation}
-	Another frequently-displayed structure is a list.
-	The following is an example of an \emph{itemized}
-	list.
-	\begin{itemize}
-		\item This is the first item of an itemized list.
-		Each item in the list is marked with a ``tick''.
-		You don't have to worry about what kind of tick
-		mark is used.
+	In the above (somewhat hacky) snippet from \texttt{compile\_data100.py}, \texttt{ast.literal\_eval()} is used to convert a string to a Python data structure, in this case a dictionary. This approach was necessary because the files in question were too large to load directly despite being in JSON format, so they had to be loaded as strings before being converted.
+	
+	\subsection{\texttt{operator.itemgetter()}}
+	
+	The module \texttt{operator.itemgetter()} was used as an efficient alternative to the built-in \texttt{dict.get()} for efficiency reasons. Though it probably would not have made a tangible difference, our data sets could sometimes be very large, and so \texttt{itemgetter()} was used as a safeguard.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	results_list = sorted(found_words.items(), key=itemgetter(1), reverse=True)
+	\end{minted}
+	
+	\texttt{itemgetter()} was used exclusively in \texttt{sorted()}, which produced a sorted list of tuples from a dictionary.
 		
-		\item This is the second item of the list.  It
-		contains another list nested inside it.  The inner
-		list is an \emph{enumerated} list.
-		\begin{enumerate}
-			\item This is the first item of an enumerated 
-			list that is nested within the itemized list.
+		%
+		%END OF INTRODUCTION
+		%
+		
+	\section{Structure and non-code files}
+	
+	A number of non-Python files (e.g. \texttt{.txt}, etc.) are found in the repository. They, along with the structure of the repository, will be very briefly detailed here.
+	
+	\subsection{Structure}
+	
+	The repository's structure is very simple. Most files are found at the top level. The directory \texttt{azer\_dictionary\_cleanup} contains files relevant to our work converting and working with an Azerbaijani dictionary, and the directory \texttt{data} contains data in various forms. However, note that the data directory is not actually available in the repository due to size constraints (e.g. the database is 267MB) despite being frequently used in the code. This means that trying to run the code directly after cloning the repository will result in errors; the data can, of course, be provided upon request. Lastly, unless otherwise noted, all files use UTF-8 encoding.
+	
+	\subsection{\texttt{dict.txt}, \texttt{dict\_entries.txt}, and \texttt{dict\_entries\_noparens.txt}}
+	
+	These three files contain the Azerbaijani dictionary and information from it in text format. \texttt{dict.txt} contains a plaintext version of the dictionary itself. \texttt{dict\_entries.txt} contains a roughly parsed and unpruned list of entries from the dictionary, and \texttt{dict\_entries\_noparens.txt} contains the same list, but with word-internal parenthesized blocks removed.
+	
+	\subsection{\texttt{task1clean.txt}}
+	
+	This probably poorly named file contains a list of all query strings (e.g. "dir", "ar", etc.) used in our project. It is called `clean' because it contains only the raw search strings without either artifacts from when this list was sent (e.g. preceding hyphens) or when these strings are used as actual search queries in the corpus (i.e. asterisks/regex formatting). The results from these queries comprised all of the data used, and this file is used in several places, e.g. to name the tables in the database.
+	
+		%
+		% END OF STUCTURE
+		%
+	
+	\section{Individual Python script overviews}
+	
+	In this section, the individual Python modules will be described in rough chronological order. Note that some will be deprecated (and marked as such), mostly due to the change from JSON to SQLite.
+	
+	%
+	% data_fetch
+	%
+	
+	\subsection{\texttt{data\_fetch.py}}
+	
+	\texttt{data\_fetch.py} interfaces with the SketchEngine API, sends queries, receives data, and then saves it to disk.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	from login import tom_username, tom_password
+	import requests
+	import json
+	import urllib.parse
+	import time
+	
+	MAX_SAMPLES = 100
+	
+	root_url = 'https://the.sketchengine.co.uk'
+	base_url='%s/bonito/run.cgi/' % root_url
+	
+	login_url = 'https://the.sketchengine.co.uk/login/'
+	logindata = {'username' : tom_username, 'password' : tom_password,'submit' : 'ok'}
+	
+	qlist = []
+	with open('task1clean.txt', encoding='utf-8') as queries:
+		for line in queries:
+			qlist.append(line.replace('\n', ''))
+	
+	s = requests.Session()
+	s.auth = (tom_username, tom_password)
+	s.get(login_url)
+	url = base_url + 'view'
+	
+	api_log = open('api_log.txt', encoding='utf-8', mode='w')
+	\end{minted}
+	
+	Some general definitions and imports, part of which comes directly from SketchEngine's example script. \texttt{MAX\_SAMPLES} is probably poorly named, but is the maximum number of pages per query; there are 1,000 results per page, so this sets the limit for maximum number of results per query at 100,000. \texttt{qlist} is a list of queries that we are interested in. \texttt{api\_log} is a log file for debugging purposes. The remaining variables are various API-related operators, e.g. \texttt{logindata} is imported and then used to authorize the session, allowing us to make further requests.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	for query in qlist:
+		pagenum = 1
+		fquery = str('q[word=".*' + query + '.*"]')
+		attrs = dict(corpname = 'preloaded/turkic_az', q = fquery, pagesize = '1000', format = 'json', fromp=pagenum, r='r1000')
+		curr_results = list()
+		
+		r = s.post(login_url,data=logindata)
+		
+		encoded_attrs=urllib.parse.urlencode(attrs)
+		
+		r = s.get(url, params = attrs)
+		curr_res_dict = r.json()
+		
+		try:
+			e = (curr_res_dict['error'])
+			api_log.write('ERROR on ' + str(query) + ':\t' + str(e) + '\n')
+			continue
+		except KeyError:
+			pass
 			
-			\item This is the second item of the inner list.  
-			\LaTeX\ allows you to nest lists deeper than 
-			you really should.
-		\end{enumerate}
-		This is the rest of the second item of the outer
-		list.  It is no more interesting than any other
-		part of the item.
-		\item This is the third item of the list.
-	\end{itemize}
-	You can even display poetry.
-	\begin{verse}
-		There is an environment 
-		for verse \\             % The \\ command separates lines
-		Whose features some poets % within a stanza.
-		will curse.   
-		
-		% One or more blank lines separate stanzas.
-		
-		For instead of making\\
-		Them do \emph{all} line breaking, \\
-		It allows them to put too many words on a line when they'd rather be 
-		forced to be terse.
-	\end{verse}
+		curr_results = curr_res_dict['Lines']
+		try:
+			total_pages = curr_res_dict['numofpages']
+		except KeyError:
+			total_pages = 1
+		api_log.write(query + ' page ' + str(pagenum) + 'done, len = ' + str(len(curr_results)) + '\n')
+	\end{minted}
 	
-	Mathematical formulas may also be displayed.  A
-	displayed formula 
-	is 
-	one-line long; multiline
-	formulas require special formatting instructions.
-	Don't start a paragraph with a displayed equation,
-	nor make one a paragraph by itself.
+	This section sets up the \texttt{for} loop which encapsulates the rest of the file (keep in mind that the following sections are within the loop). A request is first constructed in the \texttt{attrs} object; note that pagesize is 1000, the maximum allowed. \texttt{r} is supposed to return a random sample of results according to the documentation, but it seems to not do this (or perhaps is incompatible with another option, but is not documented). \texttt{fromp} is the page that is returned, starting with 1, and in our case increasing to a maximum of 100.
+	
+	This request is then sent to the corpus with \texttt{requests.get()}, and the result is converted to a dictionary using the \texttt{json} library. The first thing that is checked is whether there is an error, either a rate limit or an empty result; if so, we move on to the next iteration (i.e. the next query) with \texttt{continue}. Finally, if there is no error, we save the current page of results (the data itself is found in \texttt{Lines}) and then count the total number of pages.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+		if total_pages > 1:
+			while pagenum < MAX_SAMPLES:
+				pagenum += 1
+				attrs['fromp'] = pagenum
+				r = s.get(url, params=attrs)
+				curr_res_dict = r.json()
+				curr_results = curr_results + curr_res_dict['Lines']
+				api_log.write(query + ' page ' + str(pagenum) + 'done, len = ' + str(len(curr_results)) + '\n')			
+				time.sleep(10)
+				if pagenum % 25 == 0:
+				time.sleep(60)
+				print(str(pagenum))
+		
+		with open('data/temp/' + query + '100.json', mode='w', encoding='utf=8') as f:
+		json.dump(curr_results, f)
+		curr_results = []
+		
+		time.sleep(120)
+	
+	api_log.close()
+	\end{minted}
+	
+	In this section, we essentially repeat the loop if there are multiple pages of results, up to our defined maximum. Note that there are multiple \texttt{time.sleep()} calls in order to avoid rate limits from SketchEngine. Finally, after all the data has been compiled, it is unceremoniously dumped to a JSON file in its raw form.
+	
+	\subsection{\texttt{counter\_task1.py}}
+	
+	Deprecated.
+	
+	This module was created for the first task, which was simply an ordered token count of words which contained query strings. It has not been updated with the new database. It also does not contain optimizations and improvements found in later scripts.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	import json
+	import xlsxwriter
+	
+	f = open('data/task1.json')
+	d = json.load(f)
+	k = list(d.keys())
+	
+	workbook = xlsxwriter.Workbook('data.xlsx')
+	
+	for key in k:
+		try:
+			l = d[key]['Lines']
+		except KeyError:
+			continue
+	
+	results = dict()
+	
+	for r in l:
+		try:
+			word = r['Kwic'][0]['str']
+			results[word] = results.get(word, 0) + 1
+		except KeyError:
+			continue
+	
+	worksheet = workbook.add_worksheet(key)
+	
+	row = 0
+	
+	for result in results.keys():
+		row += 1
+		worksheet.write(row, 0, result)
+		worksheet.write(row, 1, results[result])
+	
+	workbook.close()
+	\end{minted}
+	
+	This module tries to access the \texttt{Lines} object of the result JSON file, which contains a page of results. After that, it tries to access \texttt{r[`Kwic'][0][`str']}, which contains the word which contains the query string. A results dictionary then counts the number of occurrences of such words.
+	
+	\subsection{\texttt{char\_replace.py}}
+	
+	This module replaces characters from the custom encoding found in the Azerbaijani dictionary to the more common UTF-8.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	with open("in.txt", encoding="utf-8") as infile, open ("out.txt", mode="w", encoding="utf-8") as outfile:
+		for line in infile:
+			for char in line:
+				try:
+					out_char = char_dict[char]
+					outfile.write(out_char)
+				except KeyError:
+					outfile.write(char)    
+	\end{minted}
+	
+	Not included due to space is the dictionary which maps the replacement characters. This module iterates through the file and simply replaces all characters found in the dict; if the character is not found, it simply writes it with no changes.
+	
+	\subsection{\texttt{simple\_get\_dict\_entry.py}}
+	
+	This module attempts to extract a list of dictionary entries from the converted dictionary in text form.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true, obeytabs=true, tabsize=4]{python}
+	import string
+	
+	with open("dict.txt", encoding="utf-8") as infile, open("dict_entries.txt", encoding="utf-8", mode="w") as outfile:
+		for line in infile:
+			try:
+				word = line.split(maxsplit=1)[0]
+				if word.isupper():
+					word = word.strip(string.punctuation + string.digits + '´')
+					if len(word) >= 2:
+						outfile.write(word + "\n")
+			except IndexError:
+				continue
+	\end{minted}
+	
+	Each line is split at whitespace, and the first word is examined. If it is entirely in uppercase, and longer than 
+	
 	
 \end{document}               % End of document.

@@ -13,16 +13,14 @@ login_url = 'https://the.sketchengine.co.uk/login/'
 logindata = {'username' : tom_username, 'password' : tom_password,'submit' : 'ok'}
 
 qlist = []
-queries = open('task1clean.txt', encoding='utf-8')
-for line in queries:
-    qlist.append(line.replace('\n', ''))
+with open('task1clean.txt', encoding='utf-8') as queries:
+	for line in queries:
+		qlist.append(line.replace('\n', ''))
 
 s = requests.Session()
 s.auth = (tom_username, tom_password)
 s.get(login_url)
 url = base_url + 'view'
-
-#results = {}
 
 api_log = open('api_log.txt', encoding='utf-8', mode='w')
 
