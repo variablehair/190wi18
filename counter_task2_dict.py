@@ -106,13 +106,7 @@ for token in tokens:
 
 #    if not results_dat:
 #        all_results_pruned.write(token + '\n')
-"""
-for token in results_dat:
-    results_dat[token] = sorted(results_dat[token], key=results_dat[token].get, reverse=True)
 
-for token in results_acc:
-    results_acc[token] = sorted(results_acc[token], key=results_acc[token].get, reverse=True)
-"""
 with open('data/dative_pruned.json', mode='w') as f:
     json.dump(results_dat, f)
 

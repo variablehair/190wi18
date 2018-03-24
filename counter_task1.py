@@ -1,13 +1,5 @@
 import json
-# import argparse
-from pprint import pprint
 import xlsxwriter
-
-"""
-parser = argparse.ArgumentParser()
-parser.add_argument('query')
-args = parser.parse_args()
-"""
 
 f = open('data/task1.json')
 d = json.load(f)

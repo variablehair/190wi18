@@ -1,7 +1,11 @@
 *.json
 *.xlsx
 *.db
+*.aux
+*.gz
+*.pdf
 azer_dictionary_cleanup/*.txt
+_minted-writeup/*
 
 # Specific files
 random result sample.txt

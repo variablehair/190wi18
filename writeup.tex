@@ -1,0 +1,184 @@
+% Writeup for UCSD LIGN 199, Winter 2018.
+% Student: Xiaoqing (Tom) Li, xil056@ucsd.edu
+% Project leader: Matthew Zaslansky
+% .tex structure based off sample from ftp://www.ctan.org/tex-archive/macros/latex/base/sample2e.tex
+
+\documentclass{article}      % Specifies the document class
+% The preamble begins here.
+\title{Winter 2018 LIGN 199 Writeup}  % Declares the document's title.
+\author{Xiaoqing (Tom) Li}      % Declares the author's name.
+\date\today      % Deleting this command produces today's date.
+\usepackage{xcolor}
+\usepackage{minted}
+\definecolor{bg}{rgb}{0.95,0.95,0.95}
+
+\begin{document}             % End of preamble and beginning of text.
+	
+	\maketitle                   % Produces the title.
+	
+	In Winter Quarter of 2018, I was enrolled in LIGN 199, a special independent undergraduate research course. I assisted Matthew Zaslansky, a graduate student at UCSD, with research in Azerbaijani, chiefly data compilation from an online corpus, SketchEngine, and processing of that data, in Python. The course is graded as P/NP and is worth four credits.
+	
+	\section{Introduction}
+	
+	A relatively small number of external packages and modules were used in this project; they will be briefly introduced here.
+	
+	\subsection{\texttt{requests} and \texttt{urllib.parse}}
+	
+	The \texttt{requests} package and \texttt{urllib.parse} module are used only in the data fetching process to interface with SketchEngine's API.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true]{python}
+	s = requests.Session()
+	s.auth = (tom_username, tom_password)
+	s.get(login_url)
+	url = base_url + 'view'
+	...
+	r = s.post(login_url,data=logindata)
+	encoded_attrs=urllib.parse.urlencode(attrs)
+	r = s.get(url, params = attrs)
+	\end{minted}
+	
+	\texttt{requests} is used here to create an interface with SketchEngine via a \texttt{Session} object, which sends and receives data with \texttt{post} and \texttt{get}. \texttt{urllib.parse} is used to encode the data sent to the server into the appropriate format.
+	
+	\subsection{\texttt{time}}
+	
+	The \texttt{time} package is used only in the data fetching process to delay execution of the code in order to comply with SketchEngine's rate limits.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true]{python}
+	while pagenum < MAX_SAMPLES:
+		pagenum += 1
+		attrs['fromp'] = pagenum
+		r = s.get(url, params=attrs)
+		curr_res_dict = r.json()
+		...	
+		time.sleep(10)
+		if pagenum % 25 == 0:
+			time.sleep(60)
+	\end{minted}
+	
+	Here, \texttt{time.sleep} is used to pause execution of the loop on every iteration for 10 seconds with an additional pause on every 25th iteration for 60 seconds. This was found to be within the limits allowed by SketchEngine despite being less than their prescribed pause (44 seconds per query), which is prohibitively long for our task.
+	
+	\subsection{\texttt{json}}
+	
+	The \texttt{json} package is used widely throughout the project as one of the two primary data management formats. Primarily, it is used to save and load data to disk in a machine-friendly format.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true]{python}
+	r = s.get(url, params = attrs)
+	curr_res_dict = r.json()
+	...
+	with open('data/temp/' + query + '100.json', mode='w', encoding='utf=8') as f:
+		json.dump(curr_results, f)
+	\end{minted}
+	
+	In the above snippet from \texttt{data\_fetch.py}, data is retrieved from SketchEngine in \texttt{json} format, and after processing, is then stored in a \texttt{.json} file.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true]{python}
+	with open('data/dative_pruned.json') as f:
+		j_dat = json.load(f)
+	
+	for token in j_dat:
+		...
+	\end{minted}
+	
+	In the above snippet from \texttt{xlsx\_writer\_task2.py}, stored \texttt{json} data is loaded into the program. This approach, while simple, ran into a problem of magnitude; specifically, \texttt{json.load} was found to have significant overhead on memory (RAM) which seemed to scale exponentially with file size, rendering this approach untenable when the data set became large.
+	
+	\subsection{\texttt{sqlite3}}
+	
+	As a solution to this problem, the dataset was transposed to a SQLite library using the \texttt{sqlite3} package. \texttt{sqlite3} was chosen because of its minimal setup and upkeep, making it ideal for our task. Its primary drawback is its relatively slower speed, but as our total and average throughput of database access was extremely low, this was not a concern.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true]{python}
+	conn = sqlite3.connect('data/data100.db')
+	...
+	def process_raw_json(filename, tokenname, dbconn):
+		c = dbconn.cursor()
+	try:
+		c.execute('''CREATE TABLE {} (token TEXT, left TEXT, right TEXT)'''.format(tokenname))
+		...
+	for string_dict in string_list:
+		query = '''INSERT INTO {0} VALUES ('{1}','{2}','{3}')'''.format(tokenname, result_dict['Kwic'][0]['str'], left_str.replace("\'", "\'\'"), right_str.replace("\'", "\'\'"))
+		try:
+			c.execute(query)
+		...
+	\end{minted}
+	
+	In the above snippet from \texttt{compile\_data100.py}, tables are created in our database and populated with data using database connection and cursor objects.
+	
+	\begin{minted}[bgcolor=bg, breaklines=true]{python}
+	c.execute('''SELECT token, left, right FROM {0}'''.format(token))
+	
+	while True:
+		r = c.fetchone()
+		if r is None:
+			break
+		word, left, right = r
+		...
+	\end{minted}
+	
+	In the above snippet from \texttt{counter\_task2\_dict.py}, a query which fetches every row from a particular table is executed. By using \texttt{c.fetchone()}, this allows us to only load a single row of data at a time into memory, bypassing the \texttt{json} problem (wherein the entire dataset had to be loaded into memory).
+	
+	\section{Displayed Text}
+	
+	Text is displayed by indenting it from the left
+	margin.  Quotations are commonly displayed.  There
+	are short quotations
+	\begin{quote}
+		This is a short quotation.  It consists of a 
+		single paragraph of text.  See how it is formatted.
+	\end{quote}
+	and longer ones.
+	\begin{quotation}
+		This is a longer quotation.  It consists of two
+		paragraphs of text, neither of which are
+		particularly interesting.
+		
+		This is the second paragraph of the quotation.  It
+		is just as dull as the first paragraph.
+	\end{quotation}
+	Another frequently-displayed structure is a list.
+	The following is an example of an \emph{itemized}
+	list.
+	\begin{itemize}
+		\item This is the first item of an itemized list.
+		Each item in the list is marked with a ``tick''.
+		You don't have to worry about what kind of tick
+		mark is used.
+		
+		\item This is the second item of the list.  It
+		contains another list nested inside it.  The inner
+		list is an \emph{enumerated} list.
+		\begin{enumerate}
+			\item This is the first item of an enumerated 
+			list that is nested within the itemized list.
+			
+			\item This is the second item of the inner list.  
+			\LaTeX\ allows you to nest lists deeper than 
+			you really should.
+		\end{enumerate}
+		This is the rest of the second item of the outer
+		list.  It is no more interesting than any other
+		part of the item.
+		\item This is the third item of the list.
+	\end{itemize}
+	You can even display poetry.
+	\begin{verse}
+		There is an environment 
+		for verse \\             % The \\ command separates lines
+		Whose features some poets % within a stanza.
+		will curse.   
+		
+		% One or more blank lines separate stanzas.
+		
+		For instead of making\\
+		Them do \emph{all} line breaking, \\
+		It allows them to put too many words on a line when they'd rather be 
+		forced to be terse.
+	\end{verse}
+	
+	Mathematical formulas may also be displayed.  A
+	displayed formula 
+	is 
+	one-line long; multiline
+	formulas require special formatting instructions.
+	Don't start a paragraph with a displayed equation,
+	nor make one a paragraph by itself.
+	
+\end{document}               % End of document.
